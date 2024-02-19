@@ -1,0 +1,14 @@
+{
+    "type": "record",
+    "name": "departments",
+    "fields": [
+        {
+            "name": "id",
+            "type": "long"
+        },
+        {
+            "name": "department",
+            "type": "string"
+        }
+    ]
+}

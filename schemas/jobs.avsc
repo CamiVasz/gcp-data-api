@@ -1,0 +1,14 @@
+{
+    "type": "record",
+    "name": "jobs",
+    "fields": [
+        {
+            "name": "id",
+            "type": "int"
+        },
+        {
+            "name": "job",
+            "type": "string"
+        }
+    ]
+}
