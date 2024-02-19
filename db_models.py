@@ -52,7 +52,7 @@ class EmployeeTransaction(BaseModel):
 
 
 class JobTransaction(BaseModel):
-    id: str
+    id: int
     job: str
 
     @field_validator("id")
@@ -71,7 +71,7 @@ class JobTransaction(BaseModel):
 
 
 class DepartmentTransaction(BaseModel):
-    id: str
+    id: int
     department: str
 
     @field_validator("id")
