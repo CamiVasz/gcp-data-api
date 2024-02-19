@@ -1,0 +1,13 @@
+{
+    "table_name": "department",
+    "data": [
+        {
+            "id": 30,
+            "department": "One"
+        },
+        {
+            "id": 31,
+            "department": "One"
+        }
+    ]
+}
