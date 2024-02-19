@@ -29,8 +29,18 @@ Jobs = Table(
 )
 
 def insert_batch_data(table_name, batch_data):
-    # Insert data into each table based on the table name
-    # Three options available: hired_employees, departments, jobs
+    """
+    Inserts batch data into the specified table.
+
+    Parameters:
+    - table_name (str): The name of the table to insert data into. 
+      Options are 'hired_employees', 'departments', or 'jobs'.
+    - batch_data (list): A list of dictionaries.
+      Each dictionary should contain the necessary fields for the specified table.
+
+    Returns:
+    - None
+    """
     conn = connect_with_connector().connect()
     sql_metadata = MetaData()
     if table_name == "hired_employees":
@@ -61,6 +71,22 @@ def insert_batch_data(table_name, batch_data):
 
 @app.post("/batch-transactions/")
 def create_batch_transactions(batch_transaction):
+    """
+    Create batch transactions and insert them into the specified table.
+
+    Parameters:
+    - batch_transaction (dict): A dictionary containing the batch transaction data.
+      - "data" (list): A list of dictionaries representing individual transactions.
+      - "table_name" (str): The name of the table to insert data into. 
+         Options are 'hired_employees', 'departments', or 'jobs'.
+
+    Returns:
+    - dict: A dictionary with a single key "message" and a value indicating 
+            the success of the operation.
+
+    Raises:
+    - HTTPException: If an invalid table name is provided.
+    """
     data = batch_transaction["data"]
     table_name = batch_transaction["table_name"]
     if table_name == "hired_employees":
