@@ -4,6 +4,7 @@ from avro.io import DatumReader, DatumWriter
 from fastapi import FastAPI, HTTPException
 from google.cloud import storage, secretmanager
 import pandas as pd
+from io import BytesIO
 from sqlalchemy import Table, Column, MetaData
 from sqlalchemy.sql.expression import bindparam
 from sqlalchemy.dialects.postgresql import VARCHAR, INTEGER, insert
@@ -51,7 +52,6 @@ def insert_batch_data(table_name, batch_data):
     - None
     """
     conn = connect_with_connector().connect()
-    sql_metadata = MetaData()
     if table_name == "hired_employees":
         statement = Employees.insert().values({
             "id": bindparam("id"),
@@ -67,12 +67,14 @@ def insert_batch_data(table_name, batch_data):
             "department": bindparam("department")
             }
         )
-    else:
+    elif table_name == "jobs":
         statement = Jobs.insert().values({
             "id": bindparam("id"),
             "job": bindparam("job")
             }
         )
+    else:
+        raise ValueError(f"Table {table_name} does not exist")
     conn.execute(statement, batch_data)
     conn.commit()
     conn.close()
@@ -174,17 +176,52 @@ async def backup_table(table_name: str):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.post("/restore-avro-data/{table_name}/")
+def restore_avro_data_endpoint(table_name: str):
+    try:
+        if table_name not in tables.keys():
+            raise ValueError(f"Table {table_name} does not exist")
+        # Fetch Avro data from GCS
+        storage_client = storage.Client()
+        bucket = storage_client.get_bucket("globant-data")
+        file_name = f"backup/{table_name}_backup.avro"
+        blob = bucket.blob(file_name)
+        avro_data_bytes = BytesIO(blob.download_as_bytes())
+
+        avro_schema = schema.parse(open(f"schemas/{table_name}.avsc").read())
+
+        # Read avro data
+        reader = DatumReader(avro_schema)
+        avro_file_reader = DataFileReader(avro_data_bytes, reader)
+        avro_data = [record for record in avro_file_reader]
+        avro_file_reader.close()
+
+        insert_batch_data(table_name, avro_data)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":
     import requests, json
     api_url = "http://localhost:8000"
 
-    
+    # Backup and restore data
     response = requests.post(
-        f"{api_url}/backup/hired_employees/"
+        f"{api_url}/backup/departments/"
     )
-
-    # Print the response
     print(response.status_code)
     print(response.json())
-    #print(backup_table("departments"))
+    response = requests.post(
+        f"{api_url}/restore_avro_data/departments/"
+    )
+    print(response.status_code)
+    print(response.json())
+    
+    # Load batch transactions from JSON file
+    with open("batch_insert/employees.json") as f:
+        batch_transaction = json.load(f)
+
+    response = requests.post(
+        f"{api_url}/batch-transactions/", json=batch_transaction
+    )
+    print(response.status_code)
+    print(response.json())
