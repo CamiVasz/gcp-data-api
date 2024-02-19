@@ -1,11 +1,17 @@
+from avro import schema, io, datafile
+from avro.datafile import DataFileReader, DataFileWriter
+from avro.io import DatumReader, DatumWriter
 from fastapi import FastAPI, HTTPException
-from sqlalchemy.sql.expression import bindparam
+from google.cloud import storage, secretmanager
+import pandas as pd
 from sqlalchemy import Table, Column, MetaData
+from sqlalchemy.sql.expression import bindparam
 from sqlalchemy.dialects.postgresql import VARCHAR, INTEGER, insert
 from load_historical_data import connect_with_connector
 from db_models import *
 
 app = FastAPI()
+
 Employees = Table(
     "hired_employees",
     MetaData(),
@@ -27,6 +33,9 @@ Jobs = Table(
     Column("id", INTEGER, primary_key=True),
     Column("job", VARCHAR(255))
 )
+tables = {"hired_employees": Employees, 
+            "departments": Departments, 
+            "jobs": Jobs}
 
 def insert_batch_data(table_name, batch_data):
     """
@@ -70,7 +79,7 @@ def insert_batch_data(table_name, batch_data):
 
 
 @app.post("/batch-transactions/")
-def create_batch_transactions(batch_transaction):
+async def create_batch_transactions(batch_transaction):
     """
     Create batch transactions and insert them into the specified table.
 
@@ -112,11 +121,70 @@ def create_batch_transactions(batch_transaction):
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
+
+def query_database(table_name: str):
+    # Use SQLAlchemy to query data from the specified table
+    if table_name not in tables.keys():
+        raise ValueError(f"Table {table_name} does not exist")
+    engine = connect_with_connector()
+    with engine.connect() as connection:
+        metadata = MetaData()
+        table = Table(table_name, metadata, autoload_with=connection)
+        result = connection.execute(table.select())
+        return result.fetchall()
+
+def serialize_to_avro(data, avro_schema, file_name):
+    # Serialize data into AVRO format
+    writer = DataFileWriter(open(file_name, "wb"), DatumWriter(), avro_schema)
+    for record in data:
+        writer.append(record)
+    writer.close()
+
+def upload_to_gcs(file_name):
+    # Upload data to Google Cloud Storage
+    client_storage = storage.Client()
+    bucket_name = "globant-data"
+    bucket = client_storage.bucket(bucket_name)
+    blob = bucket.blob(file_name)
+    blob.upload_from_filename(file_name)
+
+@app.post("/backup/{table_name}/")
+async def backup_table(table_name: str):
+    try:
+        # Query data from the database
+        data = query_database(table_name)
+
+        # Define AVRO schema
+        avro_schema = schema.parse(open(f"schemas/{table_name}.avsc").read())
+
+        columns = [x.name for x in avro_schema.fields]
+        data = pd.DataFrame.from_records(data, columns=columns)
+        data = data.to_dict(orient="records")
+
+        # Serialize data to AVRO format
+        file_name = f"backup/{table_name}_backup.avro"
+        serialize_to_avro(data, avro_schema, file_name)
+
+        # Upload AVRO data to Google Cloud Storage
+        upload_to_gcs(file_name)
+
+        return {
+            "message": f"Backup for {table_name} completed successfully. File uploaded to GCS: {file_name}"
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 if __name__ == "__main__":
     import requests, json
     api_url = "http://localhost:8000"
 
-    with open("batch_transactions.json", "r") as file:
-        batch_transaction = json.load(file)
-        
-    print(create_batch_transactions(batch_transaction))
+    
+    response = requests.post(
+        f"{api_url}/backup/hired_employees/"
+    )
+
+    # Print the response
+    print(response.status_code)
+    print(response.json())
+    #print(backup_table("departments"))
