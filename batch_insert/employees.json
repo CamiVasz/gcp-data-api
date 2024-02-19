@@ -1,0 +1,19 @@
+{
+    "table_name": "hired_employees",
+    "data": [
+        {
+            "id": 3000,
+            "name": "John Doe",
+            "datetime": "2022-02-14T12:30:00",
+            "department_id": 101,
+            "job_id": 201
+        },
+        {
+            "id": 3001,
+            "name": "Jane Smith",
+            "datetime": "2022-02-14T14:45:00",
+            "department_id": 102,
+            "job_id": 202
+        }
+    ]
+}
