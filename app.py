@@ -5,38 +5,15 @@ from fastapi import FastAPI, HTTPException
 from google.cloud import storage, secretmanager
 import pandas as pd
 from io import BytesIO
+import sqlalchemy
 from sqlalchemy import Table, Column, MetaData
 from sqlalchemy.sql.expression import bindparam
 from sqlalchemy.dialects.postgresql import VARCHAR, INTEGER, insert
 from load_historical_data import connect_with_connector
+from config import *
 from db_models import *
 
 app = FastAPI()
-
-Employees = Table(
-    "hired_employees",
-    MetaData(),
-    Column("id", INTEGER, primary_key=True),
-    Column("name", VARCHAR(255)),
-    Column("datetime", VARCHAR(255)),
-    Column("department_id", INTEGER),
-    Column("job_id", INTEGER),
-)
-Departments = Table(
-    "departments",
-    MetaData(),
-    Column("id", INTEGER, primary_key=True),
-    Column("department", VARCHAR(255)),
-)
-Jobs = Table(
-    "jobs",
-    MetaData(),
-    Column("id", INTEGER, primary_key=True),
-    Column("job", VARCHAR(255))
-)
-tables = {"hired_employees": Employees, 
-            "departments": Departments, 
-            "jobs": Jobs}
 
 def insert_batch_data(table_name, batch_data):
     """
@@ -199,6 +176,96 @@ def restore_avro_data_endpoint(table_name: str):
         insert_batch_data(table_name, avro_data)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+ 
+def execute_query(query):
+    # Execute the specified query
+    engine = connect_with_connector()
+    with engine.connect() as connection:
+        result = connection.execute(query)
+    return result.fetchall()
+
+@app.post("/employees_metrics/")
+async def get_employees_metrics(config: dict):
+    """
+    Number of employees hired for each job and department in "year"
+    divided by quarter, ordered alphabetically by department and job.
+    """
+    file_name = config["file_name"]
+    year = config["year"]
+    query = sqlalchemy.text(
+        f"""
+            SELECT
+                department,
+                job,
+                COUNT(*) FILTER (WHERE DATE_PART('quarter', datetime::TIMESTAMP) = 1) AS Q1,
+                COUNT(*) FILTER (WHERE DATE_PART('quarter', datetime::TIMESTAMP) = 2) AS Q2,
+                COUNT(*) FILTER (WHERE DATE_PART('quarter', datetime::TIMESTAMP) = 3) AS Q3,
+                COUNT(*) FILTER (WHERE DATE_PART('quarter', datetime::TIMESTAMP) = 4) AS Q4
+            FROM
+                hired_employees h
+            JOIN departments d ON h.department_id = d.id
+            JOIN jobs j ON h.job_id = j.id
+            WHERE
+                EXTRACT(YEAR FROM datetime::DATE) = 2021
+            GROUP BY
+                department,
+                job
+            ORDER BY
+                department ASC,
+                job ASC;
+        """
+    )
+    data = execute_query(query)
+    pd.DataFrame.from_records(
+        data, columns=["department", "job", "Q1", "Q2", "Q3", "Q4"]
+    ).to_csv(file_name, index=None)
+    return {"message": f"Employees metrics for {year} saved to {file_name}"}
+
+
+@app.post("/department_metrics/")
+async def get_department_metrics(config: dict):
+    year = config["year"]
+    file_name = config["file_name"]
+    query = sqlalchemy.text(
+        f"""
+            WITH department_stats AS (
+                SELECT
+                    d.id,
+                    COUNT(*) AS total_employees
+                FROM
+                    hired_employees h
+                JOIN departments d ON h.department_id = d.id
+                WHERE DATE_PART('year', datetime::TIMESTAMP) = 2021
+                GROUP BY d.id
+            ),
+            mean_stats AS (
+                SELECT
+                    AVG(total_employees) AS mean_employees
+                FROM
+                    department_stats
+            )
+            SELECT
+                d.id,
+                d.department,
+                ds.total_employees
+            FROM
+                department_stats ds
+            JOIN
+                departments d ON ds.id = d.id
+            JOIN
+                mean_stats ms ON 1 = 1
+            WHERE
+                ds.total_employees > ms.mean_employees
+            ORDER BY
+                ds.total_employees DESC;
+        """
+    )
+    data = execute_query(query)
+    df = pd.DataFrame.from_records(
+        data, columns=["id", "department", "total_employees"]
+    )
+    df.to_csv(file_name, index=None)
+    return {"message": f"Department metrics for {year} saved to {file_name}"}
 
 if __name__ == "__main__":
     import requests, json
