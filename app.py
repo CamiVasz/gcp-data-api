@@ -5,22 +5,22 @@ from fastapi import FastAPI, HTTPException
 from google.cloud import storage, secretmanager
 import pandas as pd
 from io import BytesIO
-import sqlalchemy
-from sqlalchemy import Table, Column, MetaData
 from sqlalchemy.sql.expression import bindparam
-from sqlalchemy.dialects.postgresql import VARCHAR, INTEGER, insert
+from sqlalchemy.dialects.postgresql import insert
+import sqlalchemy
 from load_historical_data import connect_with_connector
 from config import *
 from db_models import *
 
 app = FastAPI()
 
+
 def insert_batch_data(table_name, batch_data):
     """
     Inserts batch data into the specified table.
 
     Parameters:
-    - table_name (str): The name of the table to insert data into. 
+    - table_name (str): The name of the table to insert data into.
       Options are 'hired_employees', 'departments', or 'jobs'.
     - batch_data (list): A list of dictionaries.
       Each dictionary should contain the necessary fields for the specified table.
@@ -28,48 +28,34 @@ def insert_batch_data(table_name, batch_data):
     Returns:
     - None
     """
-    conn = connect_with_connector().connect()
-    if table_name == "hired_employees":
-        statement = Employees.insert().values({
-            "id": bindparam("id"),
-            "name": bindparam("name"),
-            "datetime": bindparam("datetime"),
-            "department_id": bindparam("department_id"),
-            "job_id": bindparam("job_id")
-            }
-        )
-    elif table_name == "departments":
-        statement = Departments.insert().values({
-            "id": bindparam("id"),
-            "department": bindparam("department")
-            }
-        )
-    elif table_name == "jobs":
-        statement = Jobs.insert().values({
-            "id": bindparam("id"),
-            "job": bindparam("job")
-            }
-        )
-    else:
+    if table_name not in tables.keys():
         raise ValueError(f"Table {table_name} does not exist")
+    conn = connect_with_connector().connect()
+    table = tables[table_name]
+    columns = [x.name for x in table.columns]
+    parameter_dict = {}
+    for column in columns:
+        parameter_dict[column] = bindparam(column)
+    statement = insert(table).values(parameter_dict)
+    statement = statement.on_conflict_do_nothing(index_elements=["id"])
     conn.execute(statement, batch_data)
     conn.commit()
     conn.close()
 
 
 @app.post("/batch-transactions/")
-async def create_batch_transactions(batch_transaction):
+async def create_batch_transactions(batch_transaction: dict):
     """
     Create batch transactions and insert them into the specified table.
 
     Parameters:
     - batch_transaction (dict): A dictionary containing the batch transaction data.
       - "data" (list): A list of dictionaries representing individual transactions.
-      - "table_name" (str): The name of the table to insert data into. 
+      - "table_name" (str): The name of the table to insert data into.
          Options are 'hired_employees', 'departments', or 'jobs'.
 
     Returns:
-    - dict: A dictionary with a single key "message" and a value indicating 
+    - dict: A dictionary with a single key "message" and a value indicating
             the success of the operation.
 
     Raises:
@@ -77,26 +63,29 @@ async def create_batch_transactions(batch_transaction):
     """
     data = batch_transaction["data"]
     table_name = batch_transaction["table_name"]
-    if table_name == "hired_employees":
-        data = [EmployeeTransaction(**t) for t in data]
-    elif table_name == "departments":
-        data = [DepartmentTransaction(**t) for t in data]
-    elif table_name == "jobs":
-        data = [JobTransaction(**t) for t in data]
-    else:
+    if table_name not in transactions.keys():
         raise HTTPException(
             status_code=400,
             detail="Invalid table name. Please use 'hired_employees', 'departments', or 'jobs'",
         )
+    insert_data = []
+    not_conforming_transactions = []
+    for transaction in data:
+        try:
+            validate = transactions[table_name](**transaction)
+            insert_data.append(transaction)
+        except:
+            not_conforming_transactions.append(transaction)
+            continue
 
     # Validate and insert batch data into the database
     try:
         # Insert batch data into the database
-        insert_batch_data(
-            table_name, [dict(transaction) for transaction in data]
-        )
+        insert_batch_data(table_name, insert_data)
 
-        return {"message": f"Batch transactions for {table_name} inserted successfully"}
+        return {
+            "message": f"""Batch transactions for {table_name} inserted successfully"""
+        }
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -112,12 +101,14 @@ def query_database(table_name: str):
         result = connection.execute(table.select())
         return result.fetchall()
 
+
 def serialize_to_avro(data, avro_schema, file_name):
     # Serialize data into AVRO format
     writer = DataFileWriter(open(file_name, "wb"), DatumWriter(), avro_schema)
     for record in data:
         writer.append(record)
     writer.close()
+
 
 def upload_to_gcs(file_name):
     # Upload data to Google Cloud Storage
@@ -126,6 +117,7 @@ def upload_to_gcs(file_name):
     bucket = client_storage.bucket(bucket_name)
     blob = bucket.blob(file_name)
     blob.upload_from_filename(file_name)
+
 
 @app.post("/backup/{table_name}/")
 async def backup_table(table_name: str):
@@ -153,8 +145,9 @@ async def backup_table(table_name: str):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+
 @app.post("/restore-avro-data/{table_name}/")
-def restore_avro_data_endpoint(table_name: str):
+async def restore_avro_data_endpoint(table_name: str):
     try:
         if table_name not in tables.keys():
             raise ValueError(f"Table {table_name} does not exist")
@@ -173,16 +166,26 @@ def restore_avro_data_endpoint(table_name: str):
         avro_data = [record for record in avro_file_reader]
         avro_file_reader.close()
 
+        # Truncate table
+        engine = connect_with_connector()
+        with engine.connect() as connection:
+            table = tables[table_name]
+            connection.execute(table.delete())
+            connection.commit()
         insert_batch_data(table_name, avro_data)
+
+        return {"message": f"Data for {table_name} restored successfully"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
- 
+
+
 def execute_query(query):
     # Execute the specified query
     engine = connect_with_connector()
     with engine.connect() as connection:
         result = connection.execute(query)
     return result.fetchall()
+
 
 @app.post("/employees_metrics/")
 async def get_employees_metrics(config: dict):
@@ -267,6 +270,7 @@ async def get_department_metrics(config: dict):
     df.to_csv(file_name, index=None)
     return {"message": f"Department metrics for {year} saved to {file_name}"}
 
+
 if __name__ == "__main__":
     import requests, json
     api_url = "http://localhost:8000"
@@ -277,12 +281,13 @@ if __name__ == "__main__":
     )
     print(response.status_code)
     print(response.json())
+
     response = requests.post(
-        f"{api_url}/restore_avro_data/departments/"
+        f"{api_url}/restore-avro-data/departments/"
     )
     print(response.status_code)
     print(response.json())
-    
+
     # Load batch transactions from JSON file
     with open("batch_insert/employees.json") as f:
         batch_transaction = json.load(f)
