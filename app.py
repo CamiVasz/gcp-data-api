@@ -3,12 +3,10 @@ from avro.datafile import DataFileReader, DataFileWriter
 from avro.io import DatumReader, DatumWriter
 from fastapi import FastAPI, HTTPException
 from google.cloud import storage, secretmanager
-import pandas as pd
 from io import BytesIO
 from sqlalchemy.sql.expression import bindparam
 from sqlalchemy.dialects.postgresql import insert
 import sqlalchemy
-from load_historical_data import connect_with_connector
 from config import *
 from utils import *
 
@@ -55,7 +53,8 @@ async def create_batch_transactions(batch_transaction: dict):
         insert_batch_data(table_name, insert_data)
 
         return {
-            "message": f"""Batch transactions for {table_name} inserted successfully"""
+            "message": f"""Batch transactions for {table_name} inserted successfully, 
+                            non-conforming transactions: {not_conforming_transactions}"""
         }
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
