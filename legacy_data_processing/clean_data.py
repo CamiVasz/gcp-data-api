@@ -1,29 +1,34 @@
-
 import pandas as pd
 def clean_data():
-    # Read csv data
-    employees = pd.read_csv(
-        "data/hired_employees.csv",
-        names=["id", "name", "datetime", "department_id", "job_id"],
-    )
-    departments = pd.read_csv("data/departments.csv", names=["id", "department"])
-    jobs = pd.read_csv("data/jobs.csv", names=["id", "job"])
+    """
+        Cleans the data in the legacy csv files.
 
-    employees.dropna(inplace=True)
-    employees["id"] = employees["id"].astype(int)
-    employees["department_id"] = employees["department_id"].astype(int)
-    employees["job_id"] = employees["job_id"].astype(int)
+        This performs the following cleaning operations:
+        - Drops any rows with missing values
+        - Converts the id columns to integers
 
-    departments.dropna(inplace=True)
-    departments["id"] = departments["id"].astype(int)
+        After cleaning the data, the function saves the 
+        cleaned data back to the respective CSV files.
 
-    jobs.dropna(inplace=True)
-    jobs["id"] = jobs["id"].astype(int)
+        Note: This function assumes that the CSV files 
+        are located in the 'data' directory.
 
-    employees.to_csv("data/hired_employees.csv", index=False, sep=",", header=None)
-    departments.to_csv("data/departments.csv", index=False, sep=",", header=None)
-    jobs.to_csv("data/jobs.csv", index=False, sep=",", header=None)
+        Example usage:
+        clean_data()
+    """
+    for file in os.listdir("data"):
+        if file.endswith(".csv"):
+            df = pd.read_csv(f"data/{file}")
+            df.dropna(inplace=True)
+            # convert id columns to integers
+            for col in df.columns:
+                if "id" in col:
+                    df[col] = df[col].astype(int)
+            df.to_csv(f"data/{file}", 
+                        index=False,
+                        sep=",", 
+                        header=None)
+    print("Data cleaned successfully!")
 
 if __name__ == "__main__":
     clean_data()
-    print("Data cleaned successfully!")
