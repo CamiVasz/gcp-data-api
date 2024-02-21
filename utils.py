@@ -1,5 +1,6 @@
 from avro import schema, io, datafile
 from avro.datafile import DataFileWriter
+from avro.io import DatumReader, DatumWriter
 from google.cloud import storage, secretmanager
 from google.cloud.sql.connector import Connector, IPTypes
 import subprocess, pg8000, sqlalchemy, os
