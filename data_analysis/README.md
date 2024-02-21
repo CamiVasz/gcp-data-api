@@ -9,10 +9,11 @@ This folder contains the necessary files and scripts for data analysis using Pow
 
 ## Visualization results
 
-![Employees Metrics](employees_metrics_visualization.jpeg)
+![Employees Metrics](Images/department_visualization_preview.jpeg)
+
 Description: Visualization of employees metrics
 
-![Department Metrics](department_metrics_visualization.jpeg)
+![Department Metrics](Images/employees_visualization_preview.jpeg)
 Description: Visualization of department metrics
 
 These are the powerBI links to access each one of the reports:
