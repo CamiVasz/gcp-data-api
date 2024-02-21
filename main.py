@@ -4,6 +4,7 @@ from avro.io import DatumReader, DatumWriter
 from fastapi import FastAPI, HTTPException
 from google.cloud import storage, secretmanager
 from io import BytesIO
+import pandas as pd
 from sqlalchemy.sql.expression import bindparam
 from sqlalchemy.dialects.postgresql import insert
 import sqlalchemy
@@ -195,31 +196,3 @@ async def get_department_metrics(config: dict):
     )
     df.to_csv(file_name, index=None)
     return {"message": f"Department metrics for {year} saved to {file_name}"}
-
-
-if __name__ == "__main__":
-    import requests, json
-    api_url = "http://localhost:8000"
-
-    # Backup and restore data
-    response = requests.post(
-        f"{api_url}/backup/departments/"
-    )
-    print(response.status_code)
-    print(response.json())
-
-    response = requests.post(
-        f"{api_url}/restore-avro-data/departments/"
-    )
-    print(response.status_code)
-    print(response.json())
-
-    # Load batch transactions from JSON file
-    with open("batch_insert/employees.json") as f:
-        batch_transaction = json.load(f)
-
-    response = requests.post(
-        f"{api_url}/batch-transactions/", json=batch_transaction
-    )
-    print(response.status_code)
-    print(response.json())
