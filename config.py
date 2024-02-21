@@ -4,6 +4,19 @@ from sqlalchemy import MetaData, Table, Column
 from pydantic import BaseModel, field_validator
 from datetime import datetime
 
+"""
+Each Transaction class is a Pydantic model that represents a transaction. 
+It contains all fields for the three defined tables.
+
+Each class also includes validation methods 
+to ensure that the field values meet certain criteria.
+
+Main functionalities
+Store and validate employee transaction data.
+Ensure that all ids are positive integers and not empty.
+Validate that the datetime field is in the ISO datetime format.
+"""
+
 class EmployeeTransaction(BaseModel):
     id: int
     name: str
@@ -52,7 +65,6 @@ class EmployeeTransaction(BaseModel):
                 "Invalid ISO datetime format. Please use the format: YYYY-MM-DDTHH:MM:SS"
             )
 
-
 class JobTransaction(BaseModel):
     id: int
     job: str
@@ -70,7 +82,6 @@ class JobTransaction(BaseModel):
         if not value or not value.strip():
             raise ValueError("Name cannot be empty or whitespace")
         return value
-
 
 class DepartmentTransaction(BaseModel):
     id: int
@@ -90,28 +101,16 @@ class DepartmentTransaction(BaseModel):
             raise ValueError("Name cannot be empty or whitespace")
         return value
 
-
-if __name__ == "__main__":
-    employee = EmployeeTransaction(
-        id=1,
-        name="Jhon",
-        datetime="2021-01-01T00:00:00",
-        department_id=1,
-        job_id=1,
-    )
-    print(employee)
-    job = JobTransaction(id="1", job="Software Engineer")
-    print(job)
-    department = DepartmentTransaction(id="1", department="Engineering")
-    print(department)
-
-
+# Define a dictionary that maps table names 
+# to their corresponding transaction classes
 transactions = {
     "hired_employees": EmployeeTransaction,
     "departments": DepartmentTransaction,
     "jobs": JobTransaction,
 }
 
+# Define a dictionary that maps table names to 
+# their corresponding SQLAlchemy table objects
 tables = {"hired_employees": Table(
                                 "hired_employees",
                                 MetaData(),
