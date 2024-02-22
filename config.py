@@ -1,4 +1,3 @@
-from db_models import *
 from sqlalchemy.dialects.postgresql import VARCHAR, INTEGER
 from sqlalchemy import MetaData, Table, Column
 from pydantic import BaseModel, field_validator
